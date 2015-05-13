@@ -1,6 +1,8 @@
 package org.muinf.seu.pperez.orion_subscriberentity;
 
 import android.os.AsyncTask;
+import android.os.Handler;
+import android.os.Message;
 import android.support.v7.app.ActionBarActivity;
 import android.support.v7.app.ActionBar;
 import android.support.v4.app.Fragment;
@@ -14,6 +16,10 @@ import android.os.Build;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -119,6 +125,8 @@ public class MainActivity extends ActionBarActivity {
         return super.onOptionsItemSelected(item);
     }
 
+
+
     /**
      * A placeholder fragment containing a simple view.
      */
@@ -127,6 +135,7 @@ public class MainActivity extends ActionBarActivity {
         Button Botonsuscribir;
         Button Botonactualizar;
         Button Botondesconectar;
+
 
 
         public PlaceholderFragment() {
@@ -203,7 +212,7 @@ public class MainActivity extends ActionBarActivity {
 
             String HeaderAccept = "application/json";
             String HeaderContent = "application/json";
-            String payload = "{\"entities\": [{\"type\": \"Transducer\",\"isPattern\": \"false\",\"id\": \"Room1\"}]}";
+            String payload = "{\"entities\": [{\"type\": \"Room\",\"isPattern\": \"false\",\"id\": \"Room1\"}]}";
             // String encodedData = URLEncoder.encode(payload, "UTF-8");
             // String encodedData = payload;
             String leng = null;
@@ -226,7 +235,7 @@ public class MainActivity extends ActionBarActivity {
                 conn.setConnectTimeout(15000);
                 conn.setRequestMethod("POST");
 
-                //conn.setRequestProperty("Accept", HeaderAccept);
+                conn.setRequestProperty("Accept", HeaderAccept);
                 conn.setRequestProperty("Content-type", HeaderContent);
                 //conn.setRequestProperty("Fiware-Service", HeaderService);
                 conn.setRequestProperty("Content-Length", leng);
@@ -239,6 +248,7 @@ public class MainActivity extends ActionBarActivity {
 
 
                 int rc = conn.getResponseCode();
+
                 resp = conn.getContentEncoding();
                 is = conn.getInputStream();
 
@@ -247,7 +257,66 @@ public class MainActivity extends ActionBarActivity {
                     resp = "OK";
                     //read the result from the server
                     rd = new BufferedReader(new InputStreamReader(is));
-                    res = rd.readLine();
+                    sb = new StringBuilder();
+
+                    String line = null;
+                    while ((line = rd.readLine()) != null)
+                    {
+                        sb.append(line + "\n");
+                    }
+                    String result = sb.toString();
+
+
+                    JSONObject jObject = null;
+                    try {
+                        jObject = new JSONObject(result);
+
+                        JSONArray jArray = jObject.getJSONArray("contextResponses");
+                        JSONObject c = jArray.getJSONObject(0);
+                        JSONObject jo = c.getJSONObject("contextElement");
+                        JSONArray jArrayattr = jo.getJSONArray("attributes");
+
+                        for(int i = 0; i <  jArrayattr.length(); i++) {
+                            try {
+                                JSONObject ca = jArrayattr.getJSONObject(i);
+
+                                if (ca.getString("name").contains("temperature")) {
+
+                                    final double va = ca.getDouble("value");
+                                    runOnUiThread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            ((EditText)  rootView.findViewById(R.id.editTemperatura)).setText("" + va);
+
+                                        }
+                                    });
+
+
+                                } else if (ca.getString("name").contains("humedad")) {
+
+                                    final double va = ca.getDouble("value");
+                                    runOnUiThread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            ((EditText)  rootView.findViewById(R.id.editHumedad)).setText("" + va);
+
+                                        }
+                                    });
+                                }
+
+
+                            } catch (JSONException e) {
+                                e.printStackTrace();
+                            }
+                        } // del for
+
+
+
+                    } catch (JSONException e) {
+                        e.printStackTrace();
+                    }
+
+
                     // cabeceras de recepcion
                     rr = conn.getHeaderFields();
                     System.out.println("headers: " + rr.toString());
@@ -421,9 +490,9 @@ public class MainActivity extends ActionBarActivity {
             if (sk==null)
                 return "error socket no abierto";
 
-            String url="http://"+sk.getInetAddress().toString()+":"+sk.getLocalPort();
+            String urlEs="http://"+sk.getInetAddress().toString()+":"+sk.getLocalPort();
 
-            String payload = "{\"entities\" : [{\"type\": \"Room\",\"isPattern\": \"false\",\"id\": \"Room1\"}],\"attributes\": [\"temperature\"], \"reference\": \""+url+"\", \"duration\": \"P1M\",\"notifyConditions\": [{    \"type\": \"ONCHANGE\", \"condValues\": [\"pressure\" ] } ], \"throttling\": \"PT5S\"}";
+            String payload = "{\"entities\" : [{\"type\": \"Room\",\"isPattern\": \"false\",\"id\": \"Room1\"}],\"attributes\": [\"temperature\"], \"reference\": \""+urlEs+"\", \"duration\": \"P1M\",\"notifyConditions\": [{    \"type\": \"ONCHANGE\", \"condValues\": [\"pressure\" ] } ], \"throttling\": \"PT5S\"}";
 
             // String encodedData = URLEncoder.encode(payload, "UTF-8");
             // String encodedData = payload;
