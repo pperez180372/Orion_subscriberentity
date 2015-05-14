@@ -30,11 +30,17 @@ import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
 import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
+import java.net.Inet4Address;
+import java.net.InetAddress;
 import java.net.MalformedURLException;
+import java.net.NetworkInterface;
 import java.net.ProtocolException;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
 import java.net.URL;
+import java.net.UnknownHostException;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
 
@@ -50,6 +56,94 @@ public class MainActivity extends ActionBarActivity {
 
     int puerto_de_escucha=54545;
     ServerSocket sk;
+
+
+    /**
+            * + * Returns a valid InetAddress to use for RMI communication. + * If the
+    * system property java.rmi.server.hostname is set it is used. + * Secondly
+    * InetAddress.getLocalHost is used. + * If neither of these are
+    * non-loopback all network interfaces + * are enumerated and the first
+    * non-loopback ipv4 + * address found is returned. If that also fails null
+            * is returned. +
+            */
+    private static InetAddress getLocalAddress() {
+        InetAddress inetAddr = null;
+
+        /**
+         * 1) If the property java.rmi.server.hostname is set and valid, use it
+         */
+        try {
+            System.out
+                    .println("Attempting to resolve java.rmi.server.hostname");
+            String hostname = System.getProperty("java.rmi.server.hostname");
+            if (hostname != null) {
+                inetAddr = InetAddress.getByName(hostname);
+                if (!inetAddr.isLoopbackAddress()) {
+                    return inetAddr;
+                } else {
+                    System.out
+                            .println("java.rmi.server.hostname is a loopback interface.");
+                }
+
+            }
+        } catch (SecurityException e) {
+            System.out
+                    .println("Caught SecurityException when trying to resolve java.rmi.server.hostname");
+        } catch (UnknownHostException e) {
+            System.out
+                    .println("Caught UnknownHostException when trying to resolve java.rmi.server.hostname");
+        }
+
+        /** 2) Try to use InetAddress.getLocalHost */
+        try {
+            System.out
+                    .println("Attempting to resolve InetADdress.getLocalHost");
+            InetAddress localHost = null;
+            localHost = InetAddress.getLocalHost();
+            if (!localHost.isLoopbackAddress()) {
+                return localHost;
+            } else {
+                System.out
+                        .println("InetAddress.getLocalHost() is a loopback interface.");
+            }
+
+        } catch (UnknownHostException e1) {
+            System.out
+                    .println("Caught UnknownHostException for InetAddress.getLocalHost()");
+        }
+
+        /** 3) Enumerate all interfaces looking for a candidate */
+        Enumeration ifs = null;
+        try {
+            System.out
+                    .println("Attempting to enumerate all network interfaces");
+            ifs = NetworkInterface.getNetworkInterfaces();
+
+            // Iterate all interfaces
+            while (ifs.hasMoreElements()) {
+                NetworkInterface iface = (NetworkInterface) ifs.nextElement();
+
+                // Fetch all IP addresses on this interface
+                Enumeration ips = iface.getInetAddresses();
+
+                // Iterate the IP addresses
+                while (ips.hasMoreElements()) {
+                    InetAddress ip = (InetAddress) ips.nextElement();
+                    if ((ip instanceof Inet4Address) && !ip.isLoopbackAddress()) {
+                        return (InetAddress) ip;
+                    }
+                }
+            }
+        } catch (SocketException se) {
+            System.out.println("Could not enumerate network interfaces");
+        }
+
+        /** 4) Epic fail */
+        System.out
+                .println("Failed to resolve a non-loopback ip address for this host.");
+        return null;
+    }
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -70,16 +164,94 @@ public class MainActivity extends ActionBarActivity {
                 try {
                     while (true)
                     {
-                    sk = new ServerSocket(puerto_de_escucha);
+                      /*  java.net.InetAddress addr = java.net.InetAddress.getLocalHost();
+                        String g=addr.getHostAddress();*/
+                        InetAddress g1=getLocalAddress();
+                        sk = new ServerSocket(puerto_de_escucha,0,g1);
+                        StringBuilder     sb=null,sbj=null;
 
-                    while (!sk.isClosed()) {
+                        while (!sk.isClosed()) {
+                            sbj=null;
+                            sb=null;
                         Socket cliente = sk.accept();
                         BufferedReader entrada = new BufferedReader(
                                 new InputStreamReader(cliente.getInputStream()));
                         PrintWriter salida = new PrintWriter(
                                 new OutputStreamWriter(cliente.getOutputStream()), true);
-                        String datos = entrada.readLine();
-                        salida.println(datos);
+                        String line = null;
+                        sb= new StringBuilder();
+                        try {
+                            do {
+                                line = entrada.readLine();
+                                sb.append(line + "\n");
+                                //hacking
+                                 if ((sbj==null)&&(line.contains("{"))) // date
+                                     sbj= new StringBuilder();
+                                 if (sbj!=null)
+                                 {
+                                     sbj.append(line+"\n");
+                                 }
+                                System.out.println(""+sb);
+                            }
+                            while (entrada.ready());
+                        } catch (IOException e1) {
+                            e1.printStackTrace();
+                        }
+   //String datos = entrada.readLine();
+
+                        System.out.println("Fin de lectura");
+                        JSONObject jObject = null;
+                        try {
+                            jObject = new JSONObject(sbj.toString());
+
+                            JSONArray jArray = jObject.getJSONArray("contextResponses");
+                            JSONObject c = jArray.getJSONObject(0);
+                            JSONObject jo = c.getJSONObject("contextElement");
+                            JSONArray jArrayattr = jo.getJSONArray("attributes");
+
+                            for(int i = 0; i <  jArrayattr.length(); i++) {
+                                try {
+                                    JSONObject ca = jArrayattr.getJSONObject(i);
+
+                                    if (ca.getString("name").contains("temperature")) {
+
+                                        final double va = ca.getDouble("value");
+                                        runOnUiThread(new Runnable() {
+                                            @Override
+                                            public void run() {
+                                                EditText t= (EditText)  rootView.findViewById(R.id.editTemperatura);
+                                                t.setText("" + va);
+
+                                            }
+                                        });
+
+
+                                    } else if (ca.getString("name").contains("humidity")) {
+
+                                        final double va = ca.getDouble("value");
+                                        runOnUiThread(new Runnable() {
+                                            @Override
+                                            public void run() {
+                                                ((EditText)  rootView.findViewById(R.id.editHumedad)).setText("" + va);
+
+                                            }
+                                        });
+                                    }
+
+
+                                } catch (JSONException e) {
+                                    e.printStackTrace();
+                                }
+                            } // del for
+
+
+
+                        } catch (JSONException e) {
+                            e.printStackTrace();
+                        }
+
+
+                        salida.println("POST HTTP/1.1 200");
                         cliente.close();
                     }
                         Thread.sleep(1000);
@@ -136,9 +308,7 @@ public class MainActivity extends ActionBarActivity {
         Button Botonactualizar;
         Button Botondesconectar;
 
-
-
-        public PlaceholderFragment() {
+      public PlaceholderFragment() {
         }
 
         @Override
@@ -292,7 +462,7 @@ public class MainActivity extends ActionBarActivity {
                                     });
 
 
-                                } else if (ca.getString("name").contains("humedad")) {
+                                } else if (ca.getString("name").contains("humidity")) {
 
                                     final double va = ca.getDouble("value");
                                     runOnUiThread(new Runnable() {
@@ -375,9 +545,9 @@ public class MainActivity extends ActionBarActivity {
             //String passwd = tpassword.getText().toString(); // "sensor";//
             //String domain = tdomain.getText().toString(); // "Asignatura SEU";
 
-            // String HeaderAccept = "application/xml";
+             String HeaderAccept = "application/json";
             String HeaderContent = "application/json";
-            String payload =  "{\"subscribeResponse\" : {\"subscriptionId\" : \""+tidsub.getText().toString()+"\"}}";
+            String payload =  "{\"subscriptionId\" : \""+tidsub.getText().toString()+"\"}";
             // String encodedData = URLEncoder.encode(payload, "UTF-8");
             // String encodedData = payload;
             String leng = null;
@@ -398,7 +568,7 @@ public class MainActivity extends ActionBarActivity {
                 conn.setConnectTimeout(15000 );
                 conn.setRequestMethod("POST");
 
-                //conn.setRequestProperty("Accept", HeaderAccept);
+                conn.setRequestProperty("Accept", HeaderAccept);
                 conn.setRequestProperty("Content-type", HeaderContent);
                 //conn.setRequestProperty("Fiware-Service", HeaderService);
                 conn.setRequestProperty("Content-Length", leng);
@@ -416,19 +586,63 @@ public class MainActivity extends ActionBarActivity {
 
                 if (rc == 200) {
 
-                    resp="OK";
-                    //read the result from the server
-                    rd = new BufferedReader(new InputStreamReader(is));
-                    //res=rd.readLine();
-                    // cabeceras de recepcion
-                    rr = conn.getHeaderFields();
-                    System.out.println("headers: " + rr.toString());
+                    resp = "OK";
 
-                } else {
-                    resp="ERROR de conexión";
-                    System.out.println("http response code error: " + rc + "\n");
 
+
+                //read the result from the server
+                rd = new BufferedReader(new InputStreamReader(is));
+                sb = new StringBuilder();
+
+                String line = null;
+                while ((line = rd.readLine()) != null)
+                {
+                    sb.append(line + "\n");
                 }
+                String result = sb.toString();
+
+
+                JSONObject jObject = null;
+                try {
+                    jObject = new JSONObject(result);
+
+                    JSONObject jo = jObject.getJSONObject("statusCode");
+
+                    final String err= jo.getString("reasonPhrase");
+
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            ((EditText)  rootView.findViewById(R.id.editIdSubscripcion)).setText(err);
+
+
+                        }
+                    });
+
+
+
+                } catch (JSONException e) {
+                    runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            ((EditText)  rootView.findViewById(R.id.editIdSubscripcion)).setText("Error parsing json");
+
+
+                        }
+                    });
+                    e.printStackTrace();
+                }
+
+
+
+
+
+
+            } else {
+                resp = "ERROR de conexión";
+                System.out.println("http response code error: " + rc + "\n");
+
+            }
 
 
 
@@ -484,21 +698,24 @@ public class MainActivity extends ActionBarActivity {
             //String passwd = tpassword.getText().toString(); // "sensor";//
             //String domain = tdomain.getText().toString(); // "Asignatura SEU";
 
-            // String HeaderAccept = "application/xml";
+             String HeaderAccept = "application/json";
             String HeaderContent = "application/json";
 
             if (sk==null)
                 return "error socket no abierto";
 
-            String urlEs="http://"+sk.getInetAddress().toString()+":"+sk.getLocalPort();
-
-            String payload = "{\"entities\" : [{\"type\": \"Room\",\"isPattern\": \"false\",\"id\": \"Room1\"}],\"attributes\": [\"temperature\"], \"reference\": \""+urlEs+"\", \"duration\": \"P1M\",\"notifyConditions\": [{    \"type\": \"ONCHANGE\", \"condValues\": [\"pressure\" ] } ], \"throttling\": \"PT5S\"}";
+            String urlEs="http://"+sk.getInetAddress().getHostAddress()+":"+sk.getLocalPort();
+            String payload = "{\"entities\" : [{\"type\": \"Room\",\"isPattern\": \"false\",\"id\": \"Room1\"}],\"attributes\": [\"temperature\"], \"reference\": \""+urlEs+"\", \"duration\": \"P1M\",\"notifyConditions\": [{    \"type\": \"ONCHANGE\", \"condValues\": [\"temperature\" ] } ], \"throttling\": \"PT5S\"}";
 
             // String encodedData = URLEncoder.encode(payload, "UTF-8");
             // String encodedData = payload;
             String leng = null;
             try {
-                leng = Integer.toString(payload.getBytes("UTF-8").length);
+                try {
+                    leng = Integer.toString(payload.getBytes("UTF-8").length);
+                } catch (UnsupportedEncodingException e1) {
+                    e1.printStackTrace();
+                }
 
                 OutputStreamWriter wr = null;
                 BufferedReader rd = null;
@@ -514,7 +731,7 @@ public class MainActivity extends ActionBarActivity {
                 conn.setConnectTimeout(15000 );
                 conn.setRequestMethod("POST");
 
-                //conn.setRequestProperty("Accept", HeaderAccept);
+                conn.setRequestProperty("Accept", HeaderAccept);
                 conn.setRequestProperty("Content-type", HeaderContent);
                 //conn.setRequestProperty("Fiware-Service", HeaderService);
                 conn.setRequestProperty("Content-Length", leng);
@@ -532,23 +749,55 @@ public class MainActivity extends ActionBarActivity {
 
                 if (rc == 200) {
 
-                    resp="OK";
+                    resp = "OK";
                     //read the result from the server
                     rd = new BufferedReader(new InputStreamReader(is));
-                    //res=rd.readLine();
-                    // cabeceras de recepcion
-                    rr = conn.getHeaderFields();
-                    System.out.println("headers: " + rr.toString());
+                    sb = new StringBuilder();
+
+                    String line = null;
+                    while ((line = rd.readLine()) != null)
+                    {
+                        sb.append(line + "\n");
+                    }
+                    String result = sb.toString();
+
+
+                    JSONObject jObject = null;
+                    try {
+                        jObject = new JSONObject(result);
+
+                        JSONObject jo = jObject.getJSONObject("subscribeResponse");
+                        final String subsID= jo.getString("subscriptionId");
+
+                                runOnUiThread(new Runnable() {
+                                        @Override
+                                        public void run() {
+                                            ((EditText)  rootView.findViewById(R.id.editIdSubscripcion)).setText(subsID);
+
+
+                                        }
+                                    });
+
+
+
+                            } catch (JSONException e) {
+                                e.printStackTrace();
+                            }
+
+
+
+
+
 
                 } else {
-                    resp="ERROR de conexión";
+                    resp = "ERROR de conexión";
                     System.out.println("http response code error: " + rc + "\n");
 
                 }
 
+            return resp;
 
 
-                return resp;
 
 
             } catch (MalformedURLException e) {
@@ -569,7 +818,7 @@ public class MainActivity extends ActionBarActivity {
         @Override
         protected void onPostExecute(String result) {
             res=result;
-            TextView tv =   (TextView)  rootView.findViewById(R.id.editIdSubscripcion);
+            TextView tv =   (TextView)  rootView.findViewById(R.id.editResultado);
             tv.setText(result);
         }
     }
